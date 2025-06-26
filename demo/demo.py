@@ -5,6 +5,7 @@ import imageio
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import pyrealsense2 as rs
 
 
 # use bfloat16 for the entire notebook
@@ -19,24 +20,40 @@ import time
 
 from sam2.build_sam import build_sam2_camera_predictor
 
-
-sam2_checkpoint = "../checkpoints/sam2.1_hiera_small.pt"
-model_cfg = "configs/sam2.1/sam2.1_hiera_s.yaml"
+sam2_checkpoint = "./checkpoints/sam2.1_hiera_tiny.pt"
+model_cfg = "configs/sam2.1/sam2.1_hiera_t.yaml"
 
 predictor = build_sam2_camera_predictor(model_cfg, sam2_checkpoint)
 
-
-cap = cv2.VideoCapture("../notebooks/videos/aquarium/aquarium.mp4")
+# cap = cv2.VideoCapture("./notebooks/videos/aquarium/aquarium.mp4")
 
 if_init = False
 tracking_i = 0
 
+# Create a pipeline
+pipeline = rs.pipeline()
+
+# Create a config and enable the streams you want
+config = rs.config()
+config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+config.enable_stream(rs.stream.color, 1920, 1080, rs.format.bgr8, 30)
+
+# Start streaming
+pipeline.start(config)
+t_0 =time.time()
+
 while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+    # ret, frame = cap.read()
+    # if not ret:
+    #     break
+    t_1 = time.time()
+    frames = pipeline.wait_for_frames()
+    frame = frames.get_color_frame()
+    frame = np.asanyarray(frame.get_data())
 
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    t_2 = time.time() - t_1
 
     width, height = frame.shape[:2][::-1]
     if not if_init:
@@ -49,20 +66,18 @@ while True:
         # First annotation
         ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
         ##! add points, `1` means positive click and `0` means negative click
-        points = np.array([[600, 255]], dtype=np.float32)
+        points = np.array([[1000, 600]], dtype=np.float32)
         labels = np.array([1], dtype=np.int32)
 
         _, out_obj_ids, out_mask_logits = predictor.add_new_prompt(
             frame_idx=ann_frame_idx, obj_id=ann_obj_id, points=points, labels=labels
         )
 
-        # Second annotation
-        ann_obj_id = 2
-        ## ! add bbox
-        bbox = np.array([[600, 214], [765, 286]], dtype=np.float32)
-        _, out_obj_ids, out_mask_logits = predictor.add_new_prompt(
-            frame_idx=ann_frame_idx, obj_id=ann_obj_id, bbox=bbox
-        )
+        # ! add bbox
+        # bbox = np.array([[1000, 600], [1100, 610]], dtype=np.float32)
+        # _, out_obj_ids, out_mask_logits = predictor.add_new_prompt(
+        #     frame_idx=ann_frame_idx, obj_id=ann_obj_id, bbox=bbox
+        # )
 
         ##! add mask
         # mask_img_path="../notebooks/masks/aquarium/aquarium_mask.png"
@@ -119,11 +134,20 @@ while True:
 
         all_mask = cv2.cvtColor(all_mask, cv2.COLOR_HSV2RGB)
         frame = cv2.addWeighted(frame, 1, all_mask, 0.5, 0)
+        
+    # for point in points:
+    #     cv2.circle(frame, (int(point[0]), int(point[1])), radius=5, color=(0, 255, 0), thickness=-1)
+    t_3 = time.time()-t_2-t_1
+
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    frame = cv2.resize(frame, (width//2, height//2))
     cv2.imshow("frame", frame)
+
+    print(f"get image: {t_2} s, get mask: {t_3} s")
+    print(f"FPS: get image: {1/t_2} Hz, get mask: {1/t_3} Hz")
 
     if cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
-cap.release()
+# cap.release()
 # gif = imageio.mimsave("./result.gif", frame_list, "GIF", duration=0.00085)
