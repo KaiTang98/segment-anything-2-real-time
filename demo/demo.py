@@ -144,7 +144,8 @@ while True:
     cv2.imshow("frame", frame)
 
     print(f"get image: {t_2} s, get mask: {t_3} s")
-    print(f"FPS: get image: {1/t_2} Hz, get mask: {1/t_3} Hz")
+    if t_2 > 0 and t_3 > 0:
+        print(f"FPS: get image: {1/t_2} Hz, get mask: {1/t_3} Hz")
 
     if cv2.waitKey(1) & 0xFF == ord("q"):
         break
